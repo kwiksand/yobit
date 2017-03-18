@@ -116,7 +116,6 @@ Yobit.prototype.publicRequest = function(method, params, callback)
 
     var url = this.server + '/' + method;
     if (verbose) console.log("Request URL is: " + url);
-    console.log("Request URL is: " + url);
 
     var options = {
         url: url,
