@@ -1,62 +1,69 @@
-var verbose = false;
+var verbose = false
 
 var util = require('util'),
     _ = require('underscore'),
     request	= require('request'),
     crypto = require('crypto'),
     VError = require('verror'),
-    md5 = require('MD5');
+    md5 = require('MD5')
 
 var Yobit = function Yobit(api_key, secret, server, timeout)
 {
-    this.api_key = api_key;
-    this.secret = secret;
+    this.api_key = api_key
+    this.secret = secret
 
-    this.server = server || 'https://yobit.net/api/3';
+    this.server = server || 'https://yobit.net'
+    this.publicApiPath = 'api/3'
+    this.privateApiPath = 'tapi'
 
-    this.timeout = timeout || 20000;
-};
+    this.timeout = timeout || 20000
+}
 
-var headers = {"User-Agent": "nodejs-7.5-api-client"};
+var headers = {"User-Agent": "nodejs-7.5-api-client"}
 
 Yobit.prototype.privateRequest = function(method, params, callback)
 {
     var functionName = 'Yobit.privateRequest()',
-        self = this;
+        self = this
+
+    var error
 
     if(!this.api_key || !this.secret)
     {
-        var error = new VError('%s must provide api_key and secret to make this API request.', functionName);
-        return callback(error);
+        error = new VError('%s must provide api_key and secret to make this API request.', functionName)
+        return callback(error)
     }
 
     if(!_.isObject(params))
     {
-        var error = new VError('%s second parameter %s must be an object. If no params then pass an empty object {}', functionName, params);
-        return callback(error);
+        error = new VError('%s second parameter %s must be an object. If no params then pass an empty object {}', functionName, params)
+        return callback(error)
     }
 
     if (!callback || typeof(callback) != 'function')
     {
-        var error = new VError('%s third parameter needs to be a callback function', functionName);
-        return callback(error);
+        error = new VError('%s third parameter needs to be a callback function', functionName)
+        return callback(error)
     }
 
-    params.api_key = this.api_key;
-    params.sign = this.signMessage(params);
+    params.method = method
+    params.nonce = this.generateNonce()
+
+    headers.key = this.api_key
+    headers.sign = this.signMessage(params)
 
     var options = {
-        url: this.server + '/' + method + '',
+        url: this.server + '/' + this.privateApiPath,
         method: 'POST',
         headers: headers,
         form: params
-    };
+    }
 
     var requestDesc = util.format('%s request to url %s with method %s and params %s',
-        options.method, options.url, method, JSON.stringify(params));
+        options.method, options.url, method, JSON.stringify(params))
 
-    executeRequest(options, requestDesc, callback);
-};
+    executeRequest(options, requestDesc, callback)
+}
 
 /**
  * This method returns a signature for a request as a md5-encoded uppercase string
@@ -65,13 +72,31 @@ Yobit.prototype.privateRequest = function(method, params, callback)
  */
 Yobit.prototype.signMessage = function getMessageSignature(params)
 {
-    var formattedParams = formatParameters(params);
+    var data = []
 
-    // append secret key value pair
-    formattedParams += '&secret_key=' + this.secret;
+    for (let param in params) {
+        data.push(`${param}=${params[param]}`)
+    }
+    var data = data.join('&')
 
-    return md5(formattedParams).toUpperCase();
-};
+    hash = crypto.createHmac('sha512', this.secret)
+    hash.update(data)
+
+    return(hash.digest('hex'))
+}
+
+/**
+ * This method returns a nonce for yobit's API, generated within the bounds (1 -> 2^31)
+ * For "uniqueness" we add a shortened timestamp to a see driven by the API key 
+ * @return {String}           The unique request Nonce
+ */
+Yobit.prototype.generateNonce = function getNonce()
+{
+    var keySeed = parseInt(this.api_key.substring(0,5), 16)
+    var dateSeed = parseInt(Date.now() / 1000)
+
+    return (dateSeed + keySeed)
+}
 
 /**
  * This method returns the parameters as key=value pairs separated by & sorted by the key
@@ -81,41 +106,42 @@ Yobit.prototype.signMessage = function getMessageSignature(params)
 function formatParameters(params)
 {
     var sortedKeys = [],
-        formattedParams = '';
+        formattedParams = ''
 
     // sort the properties of the parameters
-    sortedKeys = _.keys(params).sort();
+    sortedKeys = _.keys(params).sort()
 
     // create a string of key value pairs separated by '&' with '=' assignement
     for (i = 0; i < sortedKeys.length; i++)
     {
-        if (i != 0) {
-            formattedParams += '&';
+        if (i !== 0) {
+            formattedParams += '&'
         }
-        formattedParams += sortedKeys[i] + '=' + params[sortedKeys[i]];
+        formattedParams += sortedKeys[i] + '=' + params[sortedKeys[i]]
     }
 
-    return formattedParams;
+    return formattedParams
 }
 
 Yobit.prototype.publicRequest = function(method, params, callback)
 {
-    var functionName = 'Yobit.publicRequest()';
+    var functionName = 'Yobit.publicRequest()'
+    var error
 
     if(!_.isObject(params))
     {
-        var error = new VError('%s second parameter %s must be an object. If no params then pass an empty object {}', functionName, params);
-        return callback(error);
+        error = new VError('%s second parameter %s must be an object. If no params then pass an empty object {}', functionName, params)
+        return callback(error)
     }
 
     if (!callback || typeof(callback) != 'function')
     {
-        var error = new VError('%s third parameter needs to be a callback function with err and data parameters', functionName);
-        return callback(error);
+        error = new VError('%s third parameter needs to be a callback function with err and data parameters', functionName)
+        return callback(error)
     }
 
-    var url = this.server + '/' + method;
-    if (verbose) console.log("Request URL is: " + url);
+    var url = this.server + '/' + this.publicApiPath + '/' + method + ''
+    if (verbose) console.log("Request URL is: " + url)
 
     var options = {
         url: url,
@@ -124,61 +150,61 @@ Yobit.prototype.publicRequest = function(method, params, callback)
         timeout: this.timeout,
         qs: params,
         json: {}        // request will parse the json response into an object
-    };
+    }
 
     var requestDesc = util.format('%s request to url %s with parameters %s',
-        options.method, options.url, JSON.stringify(params));
+        options.method, options.url, JSON.stringify(params))
 
     executeRequest(options, requestDesc, callback)
-};
+}
 
 function executeRequest(options, requestDesc, callback)
 {
-    var functionName = 'Yobit.executeRequest()';
+    var functionName = 'Yobit.executeRequest()'
 
     request(options, function(err, response, data)
     {
         var error = null,   // default to no errors
-            returnObject = data;
+            returnObject = data
 
         if(err)
         {
-            error = new VError(err, '%s failed %s', functionName, requestDesc);
-            error.name = err.code;
+            error = new VError(err, '%s failed %s', functionName, requestDesc)
+            error.name = err.code
         }
         else if (response.statusCode < 200 || response.statusCode >= 300)
         {
             error = new VError('%s HTTP status code %s returned from %s', functionName,
-                response.statusCode, requestDesc);
-            error.name = response.statusCode;
+                response.statusCode, requestDesc)
+            error.name = response.statusCode
         }
         else if (options.form)
         {
             try {
-                returnObject = JSON.parse(data);
+                returnObject = JSON.parse(data)
             }
             catch(e) {
-                error = new VError(e, 'Could not parse response from server: ' + data);
+                error = new VError(e, 'Could not parse response from server: ' + data)
             }
         }
         // if json request was not able to parse json response into an object
         else if (options.json && !_.isObject(data) )
         {
-            error = new VError('%s could not parse response from %s\nResponse: %s', functionName, requestDesc, data);
+            error = new VError('%s could not parse response from %s\nResponse: %s', functionName, requestDesc, data)
         }
 
         if (_.has(returnObject, 'error_code'))
         {
-            var errorMessage = mapErrorMessage(returnObject.error_code);
+            var errorMessage = mapErrorMessage(returnObject.error_code)
 
             error = new VError('%s %s returned error code %s, message: "%s"', functionName,
-                requestDesc, returnObject.error_code, errorMessage);
+                requestDesc, returnObject.error_code, errorMessage)
 
-            error.name = returnObject.error_code;
+            error.name = returnObject.error_code
         }
 
-        callback(error, returnObject);
-    });
+        callback(error, returnObject)
+    })
 }
 
 //
@@ -187,67 +213,69 @@ function executeRequest(options, requestDesc, callback)
 
 Yobit.prototype.getTicker = function getTicker(callback, pair)
 {
-    this.publicRequest('ticker/' + pair, {currencyPair: pair}, callback);
-};
+    this.publicRequest('ticker/' + pair, {currencyPair: pair}, callback)
+}
 
 Yobit.prototype.getOrderBook = function getOrderBook(callback, pair, limit)
 {
     var params = {
         currencyPair: pair,
         limit: 1000,
-    };
+    }
 
-    if (!_.isUndefined(limit) ) params.limit = limit;
+    if (!_.isUndefined(limit) ) params.limit = limit
 
-    this.publicRequest('depth/' + pair, params, callback);
-};
+    this.publicRequest('depth/' + pair, params, callback)
+}
 
 Yobit.prototype.getTrades = function getTrades(callback, pair, limit)
 {
     var params = {
         currencyPair: pair,
         limit: 1000,
-    };
+    }
 
-    this.publicRequest('trades/' + pair, params, callback);
-};
+    if (limit) params.limit = limit
+
+    this.publicRequest('trades/' + pair, params, callback)
+}
 
 Yobit.prototype.getKline = function getKline(callback, symbol, type, size, since)
 {
-    var params = {symbol: symbol};
-    if (type) params.type = type;
-    if (size) params.size = size;
-    if (since) params.since = since;
+    var params = {symbol: symbol}
+    if (type) params.type = type
+    if (size) params.size = size
+    if (since) params.since = since
 
-    this.publicRequest('kline', params, callback);
-};
+    this.publicRequest('kline', params, callback)
+}
 
 Yobit.prototype.getLendDepth = function getLendDepth(callback, symbol)
 {
-    this.publicRequest('kline', {symbol: symbol}, callback);
-};
+    this.publicRequest('kline', {symbol: symbol}, callback)
+}
 
 //
 // Private Functions
 //
 
-Yobit.prototype.getUserInfo = function getUserInfo(callback)
+Yobit.prototype.getInfo = function getInfo(callback)
 {
-    this.privateRequest('userinfo', {}, callback);
-};
+    this.privateRequest('getInfo', {}, callback)
+}
 
 Yobit.prototype.addTrade = function addTrade(callback, symbol, type, amount, price)
 {
     var params = {
         symbol: symbol,
         type: type
-    };
+    }
 
-    if (amount) params.amount = amount;
-    if (price) params.price = price;
+    if (amount) params.amount = amount
+    if (price) params.price = price
 
-    this.privateRequest('trade', params, callback);
-};
+    this.privateRequest('trade', params, callback)
+}
 
 Yobit.prototype.addBatchTrades = function addBatchTrades(callback, symbol, type, orders)
 {
@@ -255,24 +283,24 @@ Yobit.prototype.addBatchTrades = function addBatchTrades(callback, symbol, type,
         symbol: symbol,
         type: type,
         orders_data: orders
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.cancelOrder = function cancelOrder(callback, symbol, order_id)
 {
     this.privateRequest('cancel_order', {
         symbol: symbol,
         order_id: order_id
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.getOrderInfo = function getOrderInfo(callback, symbol, order_id)
 {
     this.privateRequest('order_info', {
         symbol: symbol,
         order_id: order_id
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.getOrdersInfo = function getOrdersInfo(callback, symbol, type, order_id)
 {
@@ -280,8 +308,8 @@ Yobit.prototype.getOrdersInfo = function getOrdersInfo(callback, symbol, type, o
         symbol: symbol,
         type: type,
         order_id: order_id
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.getAccountRecords = function getAccountRecords(callback, symbol, type, current_page, page_length)
 {
@@ -290,16 +318,16 @@ Yobit.prototype.getAccountRecords = function getAccountRecords(callback, symbol,
         type: type,
         current_page: current_page,
         page_length: page_length
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.getTradeHistory = function getTradeHistory(callback, symbol, since)
 {
     this.privateRequest('trade_history', {
         symbol: symbol,
         since: since
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.getOrderHistory = function getOrderHistory(callback, symbol, status, current_page, page_length)
 {
@@ -308,8 +336,8 @@ Yobit.prototype.getOrderHistory = function getOrderHistory(callback, symbol, sta
         status: status,
         current_page: current_page,
         page_length: page_length
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.addWithdraw = function addWithdraw(callback, symbol, chargefee, trade_pwd, withdraw_address, withdraw_amount)
 {
@@ -319,16 +347,16 @@ Yobit.prototype.addWithdraw = function addWithdraw(callback, symbol, chargefee, 
         trade_pwd: trade_pwd,
         withdraw_address: withdraw_address,
         withdraw_amount: withdraw_amount
-    }, callback);
-};
+    }, callback)
+}
 
 Yobit.prototype.cancelWithdraw = function cancelWithdraw(callback, symbol, withdraw_id)
 {
     this.privateRequest('cancel_withdraw', {
         symbol: symbol,
         withdraw_id: withdraw_id
-    }, callback);
-};
+    }, callback)
+}
 
 /**
  * Maps the Yobit error codes to error message
@@ -372,14 +400,14 @@ function mapErrorMessage(error_code)
         10042: 'Admin password error',
         10100: 'User account frozen',
         10216: 'Non-available API',
-        503: 'Too many requests (Http)'};
+        503: 'Too many requests (Http)'}
 
     if (!errorCodes[error_code])
     {
-        return 'Unknown Yobit error code: ' + error_code;
+        return 'Unknown Yobit error code: ' + error_code
     }
 
-    return( errorCodes[error_code] );
+    return( errorCodes[error_code] )
 }
 
-module.exports = Yobit;
+module.exports = Yobit
