@@ -264,18 +264,18 @@ Yobit.prototype.getInfo = function getInfo(callback)
     this.privateRequest('getInfo', {}, callback)
 }
 
-Yobit.prototype.addTrade = function addTrade(callback, pair, type, amount, price)
+Yobit.prototype.addTrade = function addTrade(callback, symbol, type, amount, rate)
 {
     var params = {
-        pair,
-        type
+        pair: symbol,
+        type: type,
+        rate,
+        amount
     }
-
-    if (amount) params.amount = amount
-    if (price) params.price = price
 
     this.privateRequest('Trade', params, callback)
 }
+
 
 Yobit.prototype.addBatchTrades = function addBatchTrades(callback, symbol, type, orders)
 {
